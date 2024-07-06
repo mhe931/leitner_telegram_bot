@@ -1,10 +1,9 @@
 import logging
 from datetime import datetime, timedelta, time
 import sqlite3
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
-from config import * 
-
+from config import TELEGRAM_BOT_TOKEN
 
 # Enable logging
 logging.basicConfig(
@@ -147,11 +146,12 @@ def all_flashcards(update: Update, context: CallbackContext) -> None:
     conn.close()
 
     if flashcards:
-        response = '\n\n'.join([f'Question: {card[0]}\nBox: {card[1]}' for card in flashcards])
+        response = '\n\n'.join([f'Question:\n{card[0]}\nBox: {card[1]}' for card in flashcards])
     else:
         response = 'You have no flashcards.'
 
     update.message.reply_text(response)
+
 
 # Edit flashcards command
 def edit_flashcards(update: Update, context: CallbackContext) -> None:
@@ -179,10 +179,21 @@ def edit_delete_button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
     action, card_id = query.data.split('_')
+    logger.info(f"edit_delete_button: action={action}, card_id={card_id}")
 
     if action == 'edit':
-        context.user_data['editing'] = card_id
-        query.edit_message_text(text='Please send the new question text:')
+        conn = connect_db()
+        c = conn.cursor()
+        c.execute('SELECT question FROM flashcards WHERE id = ?', (card_id,))
+        question = c.fetchone()[0]
+        c.execute('DELETE FROM flashcards WHERE id = ?', (card_id,))
+        conn.commit()
+        conn.close()
+
+        context.user_data['editing'] = True
+        context.user_data['original_question'] = question
+        query.message.reply_text(text=f'Original question: \n{question}\n\nPlease send the new question text:', reply_markup=ForceReply(selective=True))
+        query.edit_message_text(text='Editing the question...')
     elif action == 'delete':
         conn = connect_db()
         c = conn.cursor()
@@ -191,20 +202,29 @@ def edit_delete_button(update: Update, context: CallbackContext) -> None:
         conn.close()
         query.edit_message_text(text='Flashcard deleted!')
 
+
 # Handle new question text for editing
 def handle_new_question(update: Update, context: CallbackContext) -> None:
-    if 'editing' in context.user_data:
-        card_id = context.user_data['editing']
+    logger.info(f"handle_new_question: context.user_data={context.user_data}")
+    if 'editing' in context.user_data and context.user_data['editing']:
         new_question = update.message.text
+        original_question = context.user_data['original_question']
+        user = update.message.from_user
 
         conn = connect_db()
         c = conn.cursor()
-        c.execute('UPDATE flashcards SET question = ? WHERE id = ?', (new_question, card_id))
+        c.execute('INSERT INTO flashcards (user_id, question, box, review_date) VALUES ((SELECT id FROM users WHERE chat_id = ?), ?, 1, ?)', 
+                  (user.id, new_question, (datetime.now() + timedelta(days=1)).date()))
         conn.commit()
         conn.close()
 
         del context.user_data['editing']
-        update.message.reply_text('Flashcard updated!')
+        del context.user_data['original_question']
+        update.message.reply_text('Flashcard edited!')
+    else:
+        add_flashcard(update, context)
+
+
 
 # Daily reminders
 def daily_reminder(context: CallbackContext) -> None:
