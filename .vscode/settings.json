@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "leitner",
+            "database": "${workspaceFolder:leitner_telegram_bot}/leitner_system.db"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
+}
