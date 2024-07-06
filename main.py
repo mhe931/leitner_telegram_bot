@@ -1,263 +1,188 @@
-import logging
-from datetime import datetime, timedelta, time
 import sqlite3
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
 from config import TELEGRAM_BOT_TOKEN
 
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+# Initialize the database connection
+conn = sqlite3.connect('flashcards.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Create necessary tables if they do not exist
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY
 )
+''')
 
-logger = logging.getLogger(__name__)
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS flashcards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    message_id INTEGER,
+    box INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(user_id)
+)
+''')
+conn.commit()
 
-# Database connection
-def connect_db():
-    return sqlite3.connect('leitner_system.db')
-
-# Commands list
-COMMANDS = {
-    'start': 'Start using the bot and register yourself.',
-    'review': 'Review flashcards due for today.',
-    'reminder': 'Enable or disable daily reminders.',
-    'box': 'See the status of your Leitner boxes.',
-    'all': 'View all your flashcards.',
-    'commands': 'Show all available commands with descriptions.',
-    'edit': 'Edit or delete your flashcards.'
-}
-
-# Start command
+# Start command handler
 def start(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('INSERT OR IGNORE INTO users (chat_id) VALUES (?)', (user.id,))
+    user_id = update.message.from_user.id
+    cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
-    conn.close()
-    commands_list = '\n'.join([f'/{cmd} - {desc}' for cmd, desc in COMMANDS.items()])
-    update.message.reply_text(f'Welcome to the Leitner System Bot! Send your flashcards as messages.\n\nAvailable commands:\n{commands_list}')
+    update.message.reply_text(
+        "Welcome to the Leitner System Bot! Use /commands to see available commands."
+    )
 
-# Commands command
-def show_commands(update: Update, context: CallbackContext) -> None:
-    commands_list = '\n'.join([f'/{cmd} - {desc}' for cmd, desc in COMMANDS.items()])
-    update.message.reply_text(f'Available commands:\n{commands_list}')
+# List of available commands
+def commands(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text(
+        "/start - Register yourself\n"
+        "/commands - List all available commands\n"
+        "/review - Review flashcards due for today\n"
+        "/reminder - Toggle daily reminders\n"
+        "/all - Display all your flashcards\n"
+        "/edit - Edit or delete flashcards\n"
+    )
 
 # Add flashcard
 def add_flashcard(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    question = update.message.text
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO flashcards (user_id, question, box, review_date) VALUES ((SELECT id FROM users WHERE chat_id = ?), ?, 1, ?)', 
-              (user.id, question, (datetime.now() + timedelta(days=1)).date()))
+    user_id = update.message.from_user.id
+    message_id = update.message.message_id
+    cursor.execute("INSERT INTO flashcards (user_id, message_id, box) VALUES (?, ?, ?)", (user_id, message_id, 1))
     conn.commit()
-    conn.close()
-    update.message.reply_text('Flashcard added!')
+    update.message.reply_text("Flashcard added!")
 
-# Review command
+# Review flashcards
 def review(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT id, question FROM flashcards WHERE user_id = (SELECT id FROM users WHERE chat_id = ?) AND review_date <= ?', 
-              (user.id, datetime.now().date()))
-    flashcards = c.fetchall()
-    conn.close()
+    user_id = update.message.from_user.id
+    cursor.execute("SELECT message_id FROM flashcards WHERE user_id = ? AND box = 1", (user_id,))
+    flashcards = cursor.fetchall()
 
-    if flashcards:
-        for card in flashcards:
-            keyboard = [
-                [InlineKeyboardButton("True", callback_data=f'true_{card[0]}')],
-                [InlineKeyboardButton("False", callback_data=f'false_{card[0]}')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            update.message.reply_text(f'Question: {card[1]}', reply_markup=reply_markup)
-    else:
-        update.message.reply_text('No flashcards to review today.')
+    if not flashcards:
+        update.message.reply_text("No flashcards to review.")
+        return
 
-# Handle inline button responses
-def button(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    query.answer()
-    user_response, card_id = query.data.split('_')
-
-    conn = connect_db()
-    c = conn.cursor()
-    if user_response == 'true':
-        # Move to the next box
-        c.execute('SELECT box FROM flashcards WHERE id = ?', (card_id,))
-        box = c.fetchone()[0]
-        new_box = box + 1
-        new_review_date = datetime.now() + timedelta(days=2**(new_box - 1))
-        c.execute('UPDATE flashcards SET box = ?, review_date = ? WHERE id = ?', 
-                  (new_box, new_review_date.date(), card_id))
-    else:
-        # Move to the first box
-        new_review_date = datetime.now() + timedelta(days=1)
-        c.execute('UPDATE flashcards SET box = 1, review_date = ? WHERE id = ?', 
-                  (new_review_date.date(), card_id))
-    conn.commit()
-    conn.close()
-    query.edit_message_text(text=f"Your response: {user_response.capitalize()}")
-
-# Reminder command
-def reminder(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT reminder_enabled FROM users WHERE chat_id = ?', (user.id,))
-    reminder_enabled = c.fetchone()[0]
-
-    new_status = not reminder_enabled
-    c.execute('UPDATE users SET reminder_enabled = ? WHERE chat_id = ?', (new_status, user.id))
-    conn.commit()
-    conn.close()
-
-    status = 'enabled' if new_status else 'disabled'
-    update.message.reply_text(f'Reminder {status}.')
-
-# Box status command
-def box_status(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT box, COUNT(*) FROM flashcards WHERE user_id = (SELECT id FROM users WHERE chat_id = ?) GROUP BY box', 
-              (user.id,))
-    boxes = c.fetchall()
-    conn.close()
-
-    if boxes:
-        status = '\n'.join([f'Box {box[0]}: {box[1]} cards' for box in boxes])
-    else:
-        status = 'You have no cards in your Leitner boxes.'
-
-    update.message.reply_text(status)
-
-# All flashcards command
-def all_flashcards(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT question, box FROM flashcards WHERE user_id = (SELECT id FROM users WHERE chat_id = ?)', 
-              (user.id,))
-    flashcards = c.fetchall()
-    conn.close()
-
-    if flashcards:
-        response = '\n\n'.join([f'Question:\n{card[0]}\nBox: {card[1]}' for card in flashcards])
-    else:
-        response = 'You have no flashcards.'
-
-    update.message.reply_text(response)
-
-
-# Edit flashcards command
-def edit_flashcards(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT id, question FROM flashcards WHERE user_id = (SELECT id FROM users WHERE chat_id = ?)', 
-              (user.id,))
-    flashcards = c.fetchall()
-    conn.close()
-
-    if flashcards:
+    for flashcard in flashcards:
+        message_id = flashcard[0]
+        context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
         keyboard = [
-            [InlineKeyboardButton(f"Edit: {card[1]}", callback_data=f'edit_{card[0]}'), 
-             InlineKeyboardButton(f"Delete: {card[1]}", callback_data=f'delete_{card[0]}')]
-            for card in flashcards
+            [InlineKeyboardButton("True", callback_data=f'true_{message_id}'), InlineKeyboardButton("False", callback_data=f'false_{message_id}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text('Select a question to edit or delete:', reply_markup=reply_markup)
-    else:
-        update.message.reply_text('You have no flashcards to edit or delete.')
+        context.bot.send_message(chat_id=user_id, text="Did you remember?", reply_markup=reply_markup)
 
-# Handle edit/delete inline button responses
-def edit_delete_button(update: Update, context: CallbackContext) -> None:
+def handle_review_response(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
-    action, card_id = query.data.split('_')
-    logger.info(f"edit_delete_button: action={action}, card_id={card_id}")
+    data = query.data.split('_')
+    response = data[0]
+    message_id = int(data[1])
+    user_id = query.from_user.id
 
-    if action == 'edit':
-        conn = connect_db()
-        c = conn.cursor()
-        c.execute('SELECT question FROM flashcards WHERE id = ?', (card_id,))
-        question = c.fetchone()[0]
-        c.execute('DELETE FROM flashcards WHERE id = ?', (card_id,))
-        conn.commit()
-        conn.close()
-
-        context.user_data['editing'] = True
-        context.user_data['original_question'] = question
-        query.message.reply_text(text=f'Original question: \n{question}\n\nPlease send the new question text:', reply_markup=ForceReply(selective=True))
-        query.edit_message_text(text='Editing the question...')
-    elif action == 'delete':
-        conn = connect_db()
-        c = conn.cursor()
-        c.execute('DELETE FROM flashcards WHERE id = ?', (card_id,))
-        conn.commit()
-        conn.close()
-        query.edit_message_text(text='Flashcard deleted!')
-
-
-# Handle new question text for editing
-def handle_new_question(update: Update, context: CallbackContext) -> None:
-    logger.info(f"handle_new_question: context.user_data={context.user_data}")
-    if 'editing' in context.user_data and context.user_data['editing']:
-        new_question = update.message.text
-        original_question = context.user_data['original_question']
-        user = update.message.from_user
-
-        conn = connect_db()
-        c = conn.cursor()
-        c.execute('INSERT INTO flashcards (user_id, question, box, review_date) VALUES ((SELECT id FROM users WHERE chat_id = ?), ?, 1, ?)', 
-                  (user.id, new_question, (datetime.now() + timedelta(days=1)).date()))
-        conn.commit()
-        conn.close()
-
-        del context.user_data['editing']
-        del context.user_data['original_question']
-        update.message.reply_text('Flashcard edited!')
+    if response == 'true':
+        cursor.execute("UPDATE flashcards SET box = box + 1 WHERE user_id = ? AND message_id = ?", (user_id, message_id))
     else:
-        add_flashcard(update, context)
+        cursor.execute("UPDATE flashcards SET box = 1 WHERE user_id = ? AND message_id = ?", (user_id, message_id))
+    conn.commit()
+    query.edit_message_text(text="Flashcard updated!")
 
+# Toggle daily reminders
+def reminder(update: Update, context: CallbackContext) -> None:
+    # This feature would typically require scheduling, which is out of the scope for this simple bot.
+    update.message.reply_text("Reminder feature is not implemented in this example.")
 
+# Display all flashcards
+def display_all(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    cursor.execute("SELECT message_id FROM flashcards WHERE user_id = ?", (user_id,))
+    flashcards = cursor.fetchall()
 
-# Daily reminders
-def daily_reminder(context: CallbackContext) -> None:
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute('SELECT chat_id FROM users WHERE reminder_enabled = 1')
-    users = c.fetchall()
-    conn.close()
+    if not flashcards:
+        update.message.reply_text("You have no flashcards.")
+        return
 
-    for user in users:
-        context.bot.send_message(chat_id=user[0], text='Time to review your flashcards! Use /review to start.')
+    for flashcard in flashcards:
+        message_id = flashcard[0]
+        context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
 
-def main():
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
+# Edit flashcards
+def edit_flashcards(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    cursor.execute("SELECT id, message_id FROM flashcards WHERE user_id = ?", (user_id,))
+    flashcards = cursor.fetchall()
 
-    dp = updater.dispatcher
+    if not flashcards:
+        update.message.reply_text("You have no flashcards to edit.")
+        return
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("review", review))
-    dp.add_handler(CommandHandler("reminder", reminder))
-    dp.add_handler(CommandHandler("box", box_status))
-    dp.add_handler(CommandHandler("all", all_flashcards))
-    dp.add_handler(CommandHandler("commands", show_commands))
-    dp.add_handler(CommandHandler("edit", edit_flashcards))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, add_flashcard))
-    dp.add_handler(MessageHandler(Filters.text & Filters.reply, handle_new_question))
-    dp.add_handler(CallbackQueryHandler(button, pattern='^(true|false)_'))
-    dp.add_handler(CallbackQueryHandler(edit_delete_button, pattern='^(edit|delete)_'))
+    for flashcard in flashcards:
+        flashcard_id = flashcard[0]
+        message_id = flashcard[1]
+        context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
+        keyboard = [
+            [InlineKeyboardButton("Edit", callback_data=f'edit_{flashcard_id}'), InlineKeyboardButton("Delete", callback_data=f'delete_{flashcard_id}')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        context.bot.send_message(chat_id=user_id, text="Edit or delete this flashcard?", reply_markup=reply_markup)
 
-    job_queue = updater.job_queue
-    job_queue.run_daily(daily_reminder, time=time(hour=9, minute=0, second=0))
+def handle_edit_delete(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    data = query.data.split('_')
+    action = data[0]
+    flashcard_id = int(data[1])
+    user_id = query.from_user.id
 
+    if action == 'delete':
+        cursor.execute("DELETE FROM flashcards WHERE id = ?", (flashcard_id,))
+        conn.commit()
+        query.edit_message_text(text="Flashcard deleted!")
+    elif action == 'edit':
+        cursor.execute("SELECT message_id FROM flashcards WHERE id = ?", (flashcard_id,))
+        message_id = cursor.fetchone()[0]
+        cursor.execute("DELETE FROM flashcards WHERE id = ?", (flashcard_id,))
+        conn.commit()
+        query.edit_message_text(text="Please send the new text for the flashcard.")
+        context.user_data['edit_message_id'] = message_id
+
+def handle_new_text(update: Update, context: CallbackContext) -> None:
+    if 'edit_message_id' in context.user_data:
+        user_id = update.message.from_user.id
+        old_message_id = context.user_data.pop('edit_message_id')
+        new_message_id = update.message.message_id
+        cursor.execute("INSERT INTO flashcards (user_id, message_id, box) VALUES (?, ?, ?)", (user_id, new_message_id, 1))
+        conn.commit()
+        update.message.reply_text("Flashcard updated!")
+
+def main() -> None:
+    # Initialize the bot and dispatcher
+    updater = Updater(TELEGRAM_BOT_TOKEN)
+
+    dispatcher = updater.dispatcher
+
+    # Register command handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("commands", commands))
+    dispatcher.add_handler(CommandHandler("review", review))
+    dispatcher.add_handler(CommandHandler("reminder", reminder))
+    dispatcher.add_handler(CommandHandler("all", display_all))
+    dispatcher.add_handler(CommandHandler("edit", edit_flashcards))
+
+    # Register message handlers
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, add_flashcard))
+    dispatcher.add_handler(MessageHandler(Filters.reply, handle_new_text))
+
+    # Register callback query handlers
+    dispatcher.add_handler(CallbackQueryHandler(handle_review_response, pattern='^true_'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_review_response, pattern='^false_'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^edit_'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^delete_'))
+
+    # Start the bot
     updater.start_polling()
+
+    # Run the bot until you press Ctrl-C
     updater.idle()
 
 if __name__ == '__main__':
