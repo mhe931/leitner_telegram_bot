@@ -1,7 +1,7 @@
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
+from config import TELEGRAM_BOT_TOKEN, ADMIN_ID
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, Bot
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
-from config import TELEGRAM_BOT_TOKEN
 
 # Initialize the database connection
 conn = sqlite3.connect('flashcards.db', check_same_thread=False)
@@ -30,6 +30,35 @@ def start(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
+    
+    # Get user details
+    user = update.message.from_user
+    user_name = user.full_name
+    user_telegram_id = user.id
+    username = user.username
+    
+    # Fetch user profile photos
+    bot: Bot = context.bot
+    profile_photos = bot.get_user_profile_photos(user_id)
+    
+    if profile_photos.total_count > 0:
+        photo_file_id = profile_photos.photos[0][-1].file_id  # Get the highest resolution photo
+    else:
+        photo_file_id = None
+    
+    # Message to admin
+    message = (
+        f"New user joined:\n"
+        f"Name: {user_name}\n"
+        f"Telegram ID: {user_telegram_id}\n"
+        f"Username: @{username if username else 'N/A'}"
+    )
+    
+    # Send the message and the profile photo (if available) to the admin
+    bot.send_message(chat_id=ADMIN_ID, text=message)
+    if photo_file_id:
+        bot.send_photo(chat_id=ADMIN_ID, photo=photo_file_id)
+    
     update.message.reply_text(
         "Welcome to the Leitner System Bot! Use /commands to see available commands."
     )
