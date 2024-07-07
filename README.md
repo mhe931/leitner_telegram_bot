@@ -1,98 +1,85 @@
-# leitner_telegram_bot
-Leitner box python telegram bot
-This project is a Telegram bot that implements a Leitner system for flashcard-based learning. The bot allows users to add flashcards, review them at scheduled intervals, receive daily reminders, and check their Leitner box status. The data is stored in a SQLite database.
+# Leitner System Telegram Bot
+
+This is a Telegram bot that helps you to learn and memorize information using the Leitner system, a popular method of spaced repetition. The bot allows users to add, review, edit, and delete flashcards, and provides daily reminders for reviewing flashcards.
 
 ## Features
 
-- **Add Flashcards**: Users can send messages as flashcards (text only).
-- **Review Flashcards**: The bot will present flashcards for review based on the Leitner system schedule.
-- **Daily Reminders**: Users can enable/disable daily reminders to review their flashcards.
-- **Leitner Box Status**: Users can check the status of their Leitner boxes to see how many flashcards are in each box.
+- **Add Flashcards**: Simply send the text to the bot, and it will be added as a flashcard.
+- **Review Flashcards**: Use the `/review` command to review flashcards that are due for today.
+- **Edit and Delete Flashcards**: Use the `/edit` command to edit or delete flashcards.
+- **Daily Reminders**: Toggle daily reminders using the `/reminder` command.
+- **Flashcard Box Status**: Use the `/box` command to view the status of your flashcard boxes.
+- **Help**: Use the `/help` command to get information about how the bot works and the Leitner system.
+- **Commands List**: Use the `/commands` command to see a list of available commands.
 
-## Installation
+## Commands
 
-1. **Clone the repository**:
-    ```sh
-    git clone https://github.com/mhe931/leitner_telegram_bot.git
-    cd leitner_telegram_bot
-    ```
-
-2. **Install the required libraries**:
-    ```sh
-    pip install python-telegram-bot==13.7
-    ```
-
-3. **Create the SQLite database**:
-    ```python
-    import sqlite3
-
-    def create_db():
-        conn = sqlite3.connect('leitner_system.db')
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-                     id INTEGER PRIMARY KEY,
-                     chat_id INTEGER UNIQUE,
-                     reminder_enabled BOOLEAN DEFAULT 1)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS flashcards (
-                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                     user_id INTEGER,
-                     question TEXT,
-                     answer TEXT,
-                     box INTEGER DEFAULT 1,
-                     review_date DATE,
-                     FOREIGN KEY(user_id) REFERENCES users(id))''')
-        conn.commit()
-        conn.close()
-
-    create_db()
-    ```
-
-4. **Set your Telegram Bot Token**:
-   Replace `"YOUR_TELEGRAM_BOT_TOKEN"` in the `main` function with your actual bot token from [BotFather](https://core.telegram.org/bots#botfather).
-
-## Usage
-
-1. **Start the bot**:
-    ```sh
-    python bot.py
-    ```
-
-2. **Interact with the bot**:
-    - **/start**: Register yourself in the bot's database.
-    - **Send messages**: Add flashcards by sending text messages.
-    - **/review**: Review flashcards due for today.
-    - **/reminder**: Toggle daily reminders.
-    - **/box**: Check the status of your Leitner boxes.
+- `/start` - Register yourself and start using the bot.
+- `/commands` - List all available commands.
+- `/review` - Review flashcards due for today.
+- `/reminder` - Toggle daily reminders.
+- `/box` - Display the status of your flashcard boxes.
+- `/all` - Display all your flashcards.
+- `/edit` - Edit or delete flashcards.
+- `/help` - Show help message about how the bot works and what is the Leitner system.
+- `/new` - Show how to add new flashcards.
 
 ## How It Works
 
-### Adding Flashcards
+1. **Add Flashcards**: Just send a message to the bot with the text you want to add as a flashcard.
+2. **Review Flashcards**: The bot will show you the flashcards due for review. You can mark them as "True" or "False" based on whether you remembered the content or not.
+3. **Leitner System**: Flashcards are placed in different boxes. If you remember a flashcard correctly, it moves to the next box, increasing the interval before you review it again. If you answer incorrectly, the flashcard moves back to the first box, ensuring you review it more frequently.
+4. **Daily Reminders**: The bot can send daily reminders to review your flashcards. Use the `/reminder` command to enable or disable this feature.
 
-Users add flashcards by simply sending a text message to the bot. Each flashcard is stored in the database with an initial box value of 1 and a review date set to the next day.
+## Setup and Installation
 
-### Reviewing Flashcards
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/mhe931/leitner-telegram-bot.git
+   cd leitner-telegram-bot
+   ```
+2. Create a virtual environment and activate it:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+3. Install the required dependencies:
 
-When the user issues the `/review` command, the bot fetches all flashcards due for review (those with a review date of today or earlier) and presents them one by one. Users reply with their answers, and the bot checks if they are correct. Correct answers move the flashcard to the next box with a review date set to `2^box` days later. Incorrect answers reset the flashcard to box 1 with the review date set to the next day.
+```bash
+pip install python-telegram-bot==13.7
 
-### Daily Reminders
+```
+4. Set up your configuration:
 
-Users can enable or disable daily reminders using the `/reminder` command. If enabled, the bot will send a reminder message every day at 9 AM to review flashcards.
+* Create a file named `config.py` in the project directory.
+* Add the following content to config.py:
 
-### Leitner Box Status
+```python 
+TELEGRAM_BOT_TOKEN = 'your-telegram-bot-token'
+ADMIN_ID = 'your-admin-telegram-id'
 
-Users can check the number of flashcards in each Leitner box using the `/box` command.
+```
+
+5. Run the bot:
+
+```bash
+python main.py
+
+```
+
+## Usage
+
+* Start the bot by sending the /start command.
+* Use the /help command to learn how to use the bot and the Leitner system.
+* Add new flashcards by simply sending a message with the text you want to remember.
+* Use the /review command to review your flashcards.
+* Use the /edit command to edit or delete existing flashcards.
+* Check the status of your flashcards with the /box command.
+* Toggle daily reminders with the /reminder command.
 
 ## Contributing
-
-Feel free to submit issues, fork the repository, and send pull requests. Contributions are welcome!
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
-
 This project is licensed under the MIT License.
-
-## Acknowledgements
-
-- [python-telegram-bot](https://python-telegram-bot.org/) - Python wrapper for the Telegram Bot API.
-- [SQLite](https://www.sqlite.org/) - Lightweight database engine.
 
