@@ -2,7 +2,9 @@ import sqlite3
 import datetime
 from config import TELEGRAM_BOT_TOKEN, ADMIN_ID
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, Bot
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext, JobQueue
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, JobQueue
+
+# Your remaining code here
 
 # Initialize the database connection
 conn = sqlite3.connect('flashcards.db', check_same_thread=False)
@@ -263,8 +265,9 @@ def send_daily_reminders(context: CallbackContext) -> None:
             context.bot.send_message(chat_id=user_id, text="Time to review your flashcards! Use /review to start.")
 
 def main() -> None:
+    update_queue = Queue()
     # Initialize the bot and dispatcher
-    updater = Updater(TELEGRAM_BOT_TOKEN)
+    updater = Updater(TELEGRAM_BOT_TOKEN,update_queue=update_queue)
 
     dispatcher = updater.dispatcher
     job_queue = updater.job_queue
@@ -281,8 +284,8 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler("new", new))
 
     # Register message handlers
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, add_flashcard))
-    dispatcher.add_handler(MessageHandler(Filters.reply, handle_new_text))
+    dispatcher.add_handler(MessageHandler(filters.text & ~filters.command, add_flashcard))
+    dispatcher.add_handler(MessageHandler(filters.reply, handle_new_text))
 
     # Register callback query handlers
     dispatcher.add_handler(CallbackQueryHandler(handle_review_response, pattern='^true_'))
