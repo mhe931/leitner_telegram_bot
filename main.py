@@ -136,7 +136,7 @@ async def review(update: Update, context: CallbackContext) -> None:
         message_id = flashcard[0]
         await context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
         keyboard = [
-            [InlineKeyboardButton("True", callback_data=f'true_{message_id}'), InlineKeyboardButton("False", callback_data=f'false_{message_id}')]
+            [InlineKeyboardButton("Yes", callback_data=f'true_{message_id}'), InlineKeyboardButton("No", callback_data=f'false_{message_id}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id=user_id, text="Did you remember?", reply_markup=reply_markup)
