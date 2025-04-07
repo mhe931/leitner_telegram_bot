@@ -298,4 +298,46 @@ async def main() -> None:
     application.run_polling()
 
 if __name__ == '__main__':
+    try:
+        # Initialize the application
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        
+        # Add handlers (move your handler registration here)
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("commands", commands))
+        application.add_handler(CommandHandler("review", review))
+        application.add_handler(CommandHandler("reminder", reminder))
+        application.add_handler(CommandHandler("box", box))
+        application.add_handler(CommandHandler("all", display_all))
+        application.add_handler(CommandHandler("edit", edit_flashcards))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("new", new))
+        
+        # Add message handlers
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_flashcard))
+        application.add_handler(MessageHandler(filters.REPLY, handle_new_text))
+        
+        # Add callback query handlers
+        application.add_handler(CallbackQueryHandler(handle_review_response, pattern='^true_'))
+        application.add_handler(CallbackQueryHandler(handle_review_response, pattern='^false_'))
+        application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^edit_'))
+        application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^delete_'))
+        
+        # Schedule daily reminders
+        application.job_queue.run_daily(
+            send_daily_reminders, 
+            time=datetime.time(hour=0, minute=0)
+        )
+        
+        print("Bot started successfully!")
+        # Start the bot
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        print(f"Error occurred: {e}")
+    finally:
+        # Ensure proper cleanup
+        if 'application' in locals():
+            application.stop()
+if __name__ == '__main__':
     asyncio.run(main())
