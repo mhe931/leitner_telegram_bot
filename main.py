@@ -1,5 +1,6 @@
 import sqlite3
 import datetime
+import asyncio
 from config import TELEGRAM_BOT_TOKEN, ADMIN_ID
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, JobQueue, ContextTypes
@@ -262,9 +263,12 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
         if now == reminder_time:
             await context.bot.send_message(chat_id=user_id, text="Time to review your flashcards! Use /review to start.")
 
-def main() -> None:
+async def main() -> None:
     # Initialize the bot and dispatcher
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    # Send startup notification to admin
+    await application.bot.send_message(chat_id=ADMIN_ID, text="bot starts running")
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
@@ -294,4 +298,4 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
