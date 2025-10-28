@@ -23,6 +23,7 @@ This is a Telegram bot that helps you to learn and memorize information using th
 - `/edit` - Edit or delete flashcards.
 - `/help` - Show help message about how the bot works and what is the Leitner system.
 - `/new` - Show how to add new flashcards.
+- `/bulk` - Import flashcards in bulk from a CSV formatted text, a table, a CSV file, or an Excel file.
 
 ## How It Works
 
@@ -64,18 +65,83 @@ ADMIN_ID='your-admin-telegram-id'
 python main.py
 ```
 
-## Deployment
+## Deployment on a Digital Ocean Droplet
 
-To deploy this bot, you can use the provided `Dockerfile` and `render.yaml` for Digital Ocean.
+1.  **Create a Droplet**: Create a new Droplet on Digital Ocean. A basic Droplet with Ubuntu should be sufficient.
 
-1.  **Create a `.env` file**: Create a `.env` file in the root of the project with the following content:
+2.  **Connect to your Droplet**: Connect to your Droplet using SSH.
+
+3.  **Install Dependencies**: Install the necessary dependencies on your Droplet:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install python3-venv python3-pip git
+    ```
+
+4.  **Clone the Repository**: Clone your repository to the Droplet:
+
+    ```bash
+    git clone https://github.com/your-username/leitner-telegram-bot.git
+    cd leitner-telegram-bot
+    ```
+
+5.  **Set up the Environment**: Create a virtual environment and install the dependencies:
+
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+6.  **Create the `.env` file**: Create a `.env` file with your Telegram bot token and admin ID:
+
+    ```bash
+    nano .env
+    ```
+
+    Add the following content to the file:
 
     ```
     TELEGRAM_BOT_TOKEN=your-telegram-bot-token
     ADMIN_ID=your-admin-telegram-id
     ```
 
-2.  **Deploy to Digital Ocean**: Push your code to a GitHub repository and connect it to a Digital Ocean App. The `render.yaml` file will be used to automatically configure the deployment. You will need to set the environment variables in the Digital Ocean dashboard.
+7.  **Create the `systemd` Service File**: Create a `systemd` service file to run the bot as a service:
+
+    ```bash
+    sudo nano /etc/systemd/system/leitner-bot.service
+    ```
+
+    Add the following content to the file, replacing `your_user`, `your_group`, and `/path/to/your/project` with your actual user, group, and project path:
+
+    ```
+    [Unit]
+    Description=Leitner Telegram Bot
+    After=network.target
+
+    [Service]
+    User=your_user
+    Group=your_group
+    WorkingDirectory=/path/to/your/project
+    ExecStart=/path/to/your/project/venv/bin/python main.py
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+8.  **Start and Enable the Service**: Start the service and enable it to start on boot:
+
+    ```bash
+    sudo systemctl start leitner-bot
+    sudo systemctl enable leitner-bot
+    ```
+
+9.  **Check the Status**: You can check the status of the service with the following command:
+
+    ```bash
+    sudo systemctl status leitner-bot
+    ```
 
 ## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.

@@ -2,6 +2,8 @@ import sqlite3
 import datetime
 import asyncio
 import os
+import csv
+import io
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, ContextTypes, JobQueue
@@ -11,10 +13,10 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
-DB_PATH = "/data/flashcards.db"
+DB_PATH = "flashcards.db"
 
-# Ensure the directory for the database exists
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# Ensure the directory for the database exists (if it's in a subdirectory)
+os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
 
 # Initialize the database connection
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -114,6 +116,7 @@ async def help_command(update: Update, context: CallbackContext) -> None:
         "/edit - Edit or delete flashcards\n"
         "/help - Show this help message\n"
         "/new - Show how to add new flashcards\n"
+        "/bulk - Import flashcards in bulk from a CSV formatted text, a table, a CSV file, or an Excel file.\n"
     )
     await update.message.reply_text(help_text)
 
@@ -129,6 +132,7 @@ async def commands(update: Update, context: CallbackContext) -> None:
         "/edit - Edit or delete flashcards\n"
         "/help - Show help message about how the bot works and what is the Leitner system\n"
         "/new - Show how to add new flashcards\n"
+        "/bulk - Import flashcards in bulk from a CSV formatted text, a table, a CSV file, or an Excel file.\n"
     )
 
 # New command handler
@@ -146,6 +150,49 @@ async def add_flashcard(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Flashcard added!")
     except ValueError:
         await update.message.reply_text("Invalid format. Please use: front - back")
+
+# Bulk command handler
+async def bulk(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text(
+        "To import flashcards in bulk, please send a CSV formatted text, a table, a CSV file, or an Excel file with two columns: front and back."
+    )
+
+async def handle_bulk_import(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    
+    if update.message.document:
+        file = await context.bot.get_file(update.message.document)
+        file_content = io.BytesIO()
+        await file.download_to_memory(file_content)
+        file_content.seek(0)
+        
+        # For now, we'll just handle CSV files
+        if update.message.document.mime_type == 'text/csv':
+            try:
+                decoded_content = file_content.read().decode('utf-8')
+                csv_reader = csv.reader(io.StringIO(decoded_content))
+                for row in csv_reader:
+                    if len(row) == 2:
+                        front, back = row
+                        cursor.execute("INSERT INTO flashcards (user_id, front, back, box) VALUES (?, ?, ?, ?)", (user_id, front, back, 1))
+                conn.commit()
+                await update.message.reply_text("Flashcards imported successfully!")
+            except Exception as e:
+                await update.message.reply_text(f"An error occurred while importing the file: {e}")
+        else:
+            await update.message.reply_text("Unsupported file type. Please upload a CSV file.")
+            
+    elif update.message.text:
+        try:
+            csv_reader = csv.reader(io.StringIO(update.message.text))
+            for row in csv_reader:
+                if len(row) == 2:
+                    front, back = row
+                    cursor.execute("INSERT INTO flashcards (user_id, front, back, box) VALUES (?, ?, ?, ?)", (user_id, front, back, 1))
+            conn.commit()
+            await update.message.reply_text("Flashcards imported successfully!")
+        except Exception as e:
+            await update.message.reply_text(f"An error occurred while importing the text: {e}")
 
 # Review flashcards
 async def review(update: Update, context: CallbackContext) -> None:
@@ -311,10 +358,14 @@ def main() -> None:
     application.add_handler(CommandHandler("edit", edit_flashcards))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("new", new))
+    application.add_handler(CommandHandler("bulk", bulk))
+
 
     # Register message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_flashcard))
     application.add_handler(MessageHandler(filters.REPLY, handle_new_text))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_bulk_import))
+
 
     # Register callback query handlers
     application.add_handler(CallbackQueryHandler(handle_show_answer, pattern='^show_'))

@@ -1,0 +1,13 @@
+[Unit]
+Description=Leitner Telegram Bot
+After=network.target
+
+[Service]
+User=your_user
+Group=your_group
+WorkingDirectory=/path/to/your/project
+ExecStart=/path/to/your/project/venv/bin/python main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
