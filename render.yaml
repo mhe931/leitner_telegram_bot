@@ -9,3 +9,6 @@ services:
         value: YOUR_TELEGRAM_BOT_TOKEN
       - key: ADMIN_ID
         value: YOUR_ADMIN_ID
+    disks:
+      - name: data
+        mountPath: /data

@@ -11,9 +11,10 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
+DB_PATH = "/data/flashcards.db"
 
 # Initialize the database connection
-conn = sqlite3.connect('flashcards.db', check_same_thread=False)
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 # Create necessary tables if they do not exist
