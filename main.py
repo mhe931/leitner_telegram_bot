@@ -3,8 +3,8 @@ import datetime
 import asyncio
 import os
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, JobQueue, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, ContextTypes, JobQueue
 
 # Load environment variables from .env file
 load_dotenv()
@@ -60,7 +60,7 @@ async def start(update: Update, context: CallbackContext) -> None:
     profile_photos = await bot.get_user_profile_photos(user_id)
     
     if profile_photos.total_count > 0:
-        photo_file_id = profile_photos.photos[0][-1].file_id  # Get the highest resolution photo
+        photo_file_id = profile_photos.photos[0][-1].file_id
     else:
         photo_file_id = None
     
@@ -73,9 +73,10 @@ async def start(update: Update, context: CallbackContext) -> None:
     )
     
     # Send the message and the profile photo (if available) to the admin
-    await bot.send_message(chat_id=ADMIN_ID, text=message)
-    if photo_file_id:
-        await bot.send_photo(chat_id=ADMIN_ID, photo=photo_file_id)
+    if ADMIN_ID:
+        await bot.send_message(chat_id=ADMIN_ID, text=message)
+        if photo_file_id:
+            await bot.send_photo(chat_id=ADMIN_ID, photo=photo_file_id)
     
     await update.message.reply_text(
         "Welcome to the Leitner System Bot! Use /commands to see available commands."
@@ -254,7 +255,7 @@ async def handle_edit_delete(update: Update, context: CallbackContext) -> None:
 async def handle_new_text(update: Update, context: CallbackContext) -> None:
     if 'edit_message_id' in context.user_data:
         user_id = update.message.from_user.id
-        old_message_id = context.user_data.pop('edit_message_id')
+        context.user_data.pop('edit_message_id')
         new_message_id = update.message.message_id
         cursor.execute("INSERT INTO flashcards (user_id, message_id, box) VALUES (?, ?, ?)", (user_id, new_message_id, 1))
         conn.commit()
@@ -272,10 +273,12 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def main() -> None:
     # Initialize the bot and dispatcher
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    job_queue = JobQueue()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).job_queue(job_queue).build()
 
     # Send startup notification to admin
-    await application.bot.send_message(chat_id=ADMIN_ID, text="bot starts running")
+    if ADMIN_ID:
+        await application.bot.send_message(chat_id=ADMIN_ID, text="bot starts running")
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
@@ -299,10 +302,10 @@ async def main() -> None:
     application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^delete_'))
 
     # Schedule daily reminders
-    application.job_queue.run_daily(send_daily_reminders, time=datetime.time(hour=0, minute=0))  # Adjust time as needed
+    application.job_queue.run_daily(send_daily_reminders, time=datetime.time(hour=0, minute=0))
 
     # Start the bot
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
     asyncio.run(main())
