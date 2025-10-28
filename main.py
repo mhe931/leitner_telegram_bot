@@ -13,6 +13,9 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 DB_PATH = "/data/flashcards.db"
 
+# Ensure the directory for the database exists
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
 # Initialize the database connection
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
@@ -28,7 +31,8 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS flashcards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
-    message_id INTEGER,
+    front TEXT,
+    back TEXT,
     box INTEGER,
     FOREIGN KEY(user_id) REFERENCES users(user_id)
 )
@@ -129,20 +133,24 @@ async def commands(update: Update, context: CallbackContext) -> None:
 
 # New command handler
 async def new(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text("No need a command to add a card, just send the text.")
+    await update.message.reply_text("To add a new flashcard, send the text in the format: front - back")
 
 # Add flashcard
 async def add_flashcard(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    message_id = update.message.message_id
-    cursor.execute("INSERT INTO flashcards (user_id, message_id, box) VALUES (?, ?, ?)", (user_id, message_id, 1))
-    conn.commit()
-    await update.message.reply_text("Flashcard added!")
+    text = update.message.text
+    try:
+        front, back = text.split(" - ")
+        cursor.execute("INSERT INTO flashcards (user_id, front, back, box) VALUES (?, ?, ?, ?)", (user_id, front, back, 1))
+        conn.commit()
+        await update.message.reply_text("Flashcard added!")
+    except ValueError:
+        await update.message.reply_text("Invalid format. Please use: front - back")
 
 # Review flashcards
 async def review(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    cursor.execute("SELECT message_id FROM flashcards WHERE user_id = ? AND box = 1", (user_id,))
+    cursor.execute("SELECT id, front FROM flashcards WHERE user_id = ? AND box = 1", (user_id,))
     flashcards = cursor.fetchall()
 
     if not flashcards:
@@ -150,26 +158,36 @@ async def review(update: Update, context: CallbackContext) -> None:
         return
 
     for flashcard in flashcards:
-        message_id = flashcard[0]
-        await context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
+        flashcard_id, front = flashcard
         keyboard = [
-            [InlineKeyboardButton("Yes", callback_data=f'true_{message_id}'), InlineKeyboardButton("No", callback_data=f'false_{message_id}')]
+            [InlineKeyboardButton("Show Answer", callback_data=f'show_{flashcard_id}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await context.bot.send_message(chat_id=user_id, text="Did you remember?", reply_markup=reply_markup)
+        await context.bot.send_message(chat_id=user_id, text=front, reply_markup=reply_markup)
+
+async def handle_show_answer(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    flashcard_id = int(query.data.split('_')[1])
+    cursor.execute("SELECT back FROM flashcards WHERE id = ?", (flashcard_id,))
+    back = cursor.fetchone()[0]
+    keyboard = [
+        [InlineKeyboardButton("Yes", callback_data=f'true_{flashcard_id}'), InlineKeyboardButton("No", callback_data=f'false_{flashcard_id}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text=back, reply_markup=reply_markup)
 
 async def handle_review_response(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     data = query.data.split('_')
     response = data[0]
-    message_id = int(data[1])
-    user_id = query.from_user.id
+    flashcard_id = int(data[1])
 
     if response == 'true':
-        cursor.execute("UPDATE flashcards SET box = box + 1 WHERE user_id = ? AND message_id = ?", (user_id, message_id))
+        cursor.execute("UPDATE flashcards SET box = box + 1 WHERE id = ?", (flashcard_id,))
     else:
-        cursor.execute("UPDATE flashcards SET box = 1 WHERE user_id = ? AND message_id = ?", (user_id, message_id))
+        cursor.execute("UPDATE flashcards SET box = 1 WHERE id = ?", (flashcard_id,))
     conn.commit()
     await query.edit_message_text(text="Flashcard updated!")
 
@@ -209,36 +227,32 @@ async def box(update: Update, context: CallbackContext) -> None:
 # Display all flashcards
 async def display_all(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    cursor.execute("SELECT message_id FROM flashcards WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT front, back FROM flashcards WHERE user_id = ?", (user_id,))
     flashcards = cursor.fetchall()
 
     if not flashcards:
         await update.message.reply_text("You have no flashcards.")
         return
 
-    for flashcard in flashcards:
-        message_id = flashcard[0]
-        await context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
+    for front, back in flashcards:
+        await context.bot.send_message(chat_id=user_id, text=f"{front} - {back}")
 
 # Edit flashcards
 async def edit_flashcards(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    cursor.execute("SELECT id, message_id FROM flashcards WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT id, front, back FROM flashcards WHERE user_id = ?", (user_id,))
     flashcards = cursor.fetchall()
 
     if not flashcards:
         await update.message.reply_text("You have no flashcards to edit.")
         return
 
-    for flashcard in flashcards:
-        flashcard_id = flashcard[0]
-        message_id = flashcard[1]
-        await context.bot.forward_message(chat_id=user_id, from_chat_id=user_id, message_id=message_id)
+    for flashcard_id, front, back in flashcards:
         keyboard = [
             [InlineKeyboardButton("Edit", callback_data=f'edit_{flashcard_id}'), InlineKeyboardButton("Delete", callback_data=f'delete_{flashcard_id}')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await context.bot.send_message(chat_id=user_id, text="Edit or delete this flashcard?", reply_markup=reply_markup)
+        await context.bot.send_message(chat_id=user_id, text=f"{front} - {back}", reply_markup=reply_markup)
 
 async def handle_edit_delete(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -253,16 +267,18 @@ async def handle_edit_delete(update: Update, context: CallbackContext) -> None:
         await query.edit_message_text(text="Flashcard deleted!")
     elif action == 'edit':
         context.user_data['edit_flashcard_id'] = flashcard_id
-        await query.edit_message_text(text="Please send the new text for the flashcard.")
+        await query.edit_message_text(text="Please send the new text for the flashcard in the format: front - back")
 
 async def handle_new_text(update: Update, context: CallbackContext) -> None:
     if 'edit_flashcard_id' in context.user_data:
-        user_id = update.message.from_user.id
         flashcard_id = context.user_data.pop('edit_flashcard_id')
-        new_message_id = update.message.message_id
-        cursor.execute("UPDATE flashcards SET message_id = ? WHERE id = ?", (new_message_id, flashcard_id))
-        conn.commit()
-        await update.message.reply_text("Flashcard updated!")
+        try:
+            front, back = update.message.text.split(" - ")
+            cursor.execute("UPDATE flashcards SET front = ?, back = ? WHERE id = ?", (front, back, flashcard_id))
+            conn.commit()
+            await update.message.reply_text("Flashcard updated!")
+        except ValueError:
+            await update.message.reply_text("Invalid format. Please use: front - back")
 
 # Send daily reminders
 async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -301,6 +317,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.REPLY, handle_new_text))
 
     # Register callback query handlers
+    application.add_handler(CallbackQueryHandler(handle_show_answer, pattern='^show_'))
     application.add_handler(CallbackQueryHandler(handle_review_response, pattern='^true_'))
     application.add_handler(CallbackQueryHandler(handle_review_response, pattern='^false_'))
     application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^edit_'))
