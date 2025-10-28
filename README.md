@@ -46,40 +46,39 @@ source venv/bin/activate
 3. Install the required dependencies:
 
 ```bash
-pip install python-telegram-bot==13.7
-
+pip install -r requirements.txt
 ```
 4. Set up your configuration:
 
-* Create a file named `config.py` in the project directory.
-* Add the following content to config.py:
+* Create a file named `.env` in the project directory.
+* Add the following content to the `.env` file:
 
-```python 
-TELEGRAM_BOT_TOKEN = 'your-telegram-bot-token'
-ADMIN_ID = 'your-admin-telegram-id'
-
+```
+TELEGRAM_BOT_TOKEN='your-telegram-bot-token'
+ADMIN_ID='your-admin-telegram-id'
 ```
 
 5. Run the bot:
 
 ```bash
 python main.py
-
 ```
 
-## Usage
+## Deployment
 
-* Start the bot by sending the /start command.
-* Use the /help command to learn how to use the bot and the Leitner system.
-* Add new flashcards by simply sending a message with the text you want to remember.
-* Use the /review command to review your flashcards.
-* Use the /edit command to edit or delete existing flashcards.
-* Check the status of your flashcards with the /box command.
-* Toggle daily reminders with the /reminder command.
+To deploy this bot, you can use the provided `Dockerfile` and `render.yaml` for Digital Ocean.
+
+1.  **Create a `.env` file**: Create a `.env` file in the root of the project with the following content:
+
+    ```
+    TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+    ADMIN_ID=your-admin-telegram-id
+    ```
+
+2.  **Deploy to Digital Ocean**: Push your code to a GitHub repository and connect it to a Digital Ocean App. The `render.yaml` file will be used to automatically configure the deployment. You will need to set the environment variables in the Digital Ocean dashboard.
 
 ## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 This project is licensed under the MIT License.
-
