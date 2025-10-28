@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS reminders (
 ''')
 conn.commit()
 
+async def post_init(application: Application) -> None:
+    """Post initialization logic."""
+    if ADMIN_ID:
+        await application.bot.send_message(chat_id=ADMIN_ID, text="bot starts running")
+    
+    application.job_queue.run_daily(send_daily_reminders, time=datetime.time(hour=0, minute=0))
+
 # Start command handler
 async def start(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
@@ -238,26 +245,21 @@ async def handle_edit_delete(update: Update, context: CallbackContext) -> None:
     data = query.data.split('_')
     action = data[0]
     flashcard_id = int(data[1])
-    user_id = query.from_user.id
 
     if action == 'delete':
         cursor.execute("DELETE FROM flashcards WHERE id = ?", (flashcard_id,))
         conn.commit()
         await query.edit_message_text(text="Flashcard deleted!")
     elif action == 'edit':
-        cursor.execute("SELECT message_id FROM flashcards WHERE id = ?", (flashcard_id,))
-        message_id = cursor.fetchone()[0]
-        cursor.execute("DELETE FROM flashcards WHERE id = ?", (flashcard_id,))
-        conn.commit()
+        context.user_data['edit_flashcard_id'] = flashcard_id
         await query.edit_message_text(text="Please send the new text for the flashcard.")
-        context.user_data['edit_message_id'] = message_id
 
 async def handle_new_text(update: Update, context: CallbackContext) -> None:
-    if 'edit_message_id' in context.user_data:
+    if 'edit_flashcard_id' in context.user_data:
         user_id = update.message.from_user.id
-        context.user_data.pop('edit_message_id')
+        flashcard_id = context.user_data.pop('edit_flashcard_id')
         new_message_id = update.message.message_id
-        cursor.execute("INSERT INTO flashcards (user_id, message_id, box) VALUES (?, ?, ?)", (user_id, new_message_id, 1))
+        cursor.execute("UPDATE flashcards SET message_id = ? WHERE id = ?", (new_message_id, flashcard_id))
         conn.commit()
         await update.message.reply_text("Flashcard updated!")
 
@@ -271,14 +273,16 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
         if now == reminder_time:
             await context.bot.send_message(chat_id=user_id, text="Time to review your flashcards! Use /review to start.")
 
-async def main() -> None:
-    # Initialize the bot and dispatcher
+def main() -> None:
+    """Run the bot."""
     job_queue = JobQueue()
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).job_queue(job_queue).build()
-
-    # Send startup notification to admin
-    if ADMIN_ID:
-        await application.bot.send_message(chat_id=ADMIN_ID, text="bot starts running")
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .job_queue(job_queue)
+        .post_init(post_init)
+        .build()
+    )
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
@@ -301,11 +305,8 @@ async def main() -> None:
     application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^edit_'))
     application.add_handler(CallbackQueryHandler(handle_edit_delete, pattern='^delete_'))
 
-    # Schedule daily reminders
-    application.job_queue.run_daily(send_daily_reminders, time=datetime.time(hour=0, minute=0))
-
     # Start the bot
-    await application.run_polling()
+    application.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
