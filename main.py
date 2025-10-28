@@ -13,7 +13,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
-DB_PATH = "flashcards.db"
+DB_PATH = os.getenv("DB_PATH", "flashcards.db")
 
 # Ensure the directory for the database exists (if it's in a subdirectory)
 os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
