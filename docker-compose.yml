@@ -1,0 +1,16 @@
+    version: '3.8'
+
+    services:
+      bot:
+        build: .
+        container_name: leitner-bot
+        # This is the key to making it "always run"
+        restart: always
+        # Load the environment variables from the .env file
+        env_file:
+          - .env
+        # This is the magic for data persistence!
+        volumes:
+          # Maps the 'app-data' directory on the host to the '/data' directory inside the container
+          - ./app-data:/data
+
